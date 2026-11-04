@@ -13,7 +13,7 @@
 const VIEWS = ['player', 'movies', 'series', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály', search: 'Hledat' };
 
-const CARD_VERSION = '0.1.6';
+const CARD_VERSION = '0.1.7';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -203,11 +203,11 @@ class SosacCard extends HTMLElement {
       const pick = streams.find((s) => s.quality === '720p' && /cs|cz/i.test(s.lang))
         || streams.find((s) => s.quality === '720p')
         || streams[0];
-      // streamuj CDN je jen HTTP — přes HTTPS dashboard by prohlížeč
-      // blokoval mixed content → proxy přes HA. Po HTTP stačí přímá URL
-      // (video jede internetem klienta, ne přes server s HA).
+      // Proxy přes HA jen jako fallback pro HTTP streamy na HTTPS
+      // dashboardu (mixed content). Backend vrací HTTPS URL, takže
+      // normálně jede video přímo internetem klienta.
       let src = pick.url;
-      if (location.protocol === 'https:') {
+      if (location.protocol === 'https:' && /^http:\/\//i.test(src)) {
         const path = `/api/sosac/stream?u=${encodeURIComponent(pick.url)}`;
         const signed = await this._ws({ type: 'auth/sign_path', path, expires: 3600 });
         src = signed.path;

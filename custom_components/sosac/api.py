@@ -299,4 +299,11 @@ class SosacApi:
                         stream.url = body.strip()
         except Exception as err:
             _LOGGER.debug("Probe selhal pro %s: %s", stream.url, err)
+        stream.url = _https_url(stream.url)
         return stream
+
+
+def _https_url(url: str) -> str:
+    """CDN streamuj umí HTTPS na 443 — přepíšeme http://host:8080 →
+    https://host, ať stream jede přímo prohlížeči bez mixed content."""
+    return re.sub(r"^http://([^/:]+):8080", r"https://\1", url)
