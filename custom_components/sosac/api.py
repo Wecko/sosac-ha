@@ -211,7 +211,33 @@ class SosacApi:
         from urllib.parse import quote_plus
         if not 3 <= len(query) <= 100:
             raise ValueError("Dotaz musí mít 3–100 znaků")
-        return await self._list_videos(URL + J_SEARCH + quote_plus(query))
+        videos = await self._list_videos(URL + J_SEARCH + quote_plus(query))
+        series = await self._search_series(query)
+        return series + videos
+
+    @staticmethod
+    def _fold(text: str) -> str:
+        return "".join(c for c in text.lower() if c.isalnum())
+
+    async def _search_series(self, query: str) -> list[dict]:
+        """Seriály v search API nejsou — prohledáme index podle prvního
+        alfanumerického znaku dotazu."""
+        letter = next((c for c in query.lower() if c.isalnum()), None)
+        if letter is None:
+            return []
+        if not letter.isalpha():
+            letter = "0-9"
+        try:
+            data = await self._get_json(f"{URL}{J_TV_SHOWS}{letter}.json")
+        except Exception:
+            return []
+        q = self._fold(query)
+        result = []
+        for s in data:
+            names = s.get("n", {})
+            if any(q in self._fold(n) for n in names.values()):
+                result.append(_series_item(s, self._lang))
+        return result
 
     # --- resolve -----------------------------------------------------------
 
