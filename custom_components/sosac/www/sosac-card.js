@@ -13,7 +13,7 @@
 const VIEWS = ['player', 'movies', 'series', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály', search: 'Hledat' };
 
-const CARD_VERSION = '0.1.4';
+const CARD_VERSION = '0.1.5';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -203,7 +203,11 @@ class SosacCard extends HTMLElement {
       const pick = streams.find((s) => s.quality === '720p' && /cs|cz/i.test(s.lang))
         || streams.find((s) => s.quality === '720p')
         || streams[0];
-      playStream(item.title, pick.url);
+      // streamuj CDN je jen HTTP — proxy přes HA kvůli mixed content,
+      // autorizace podepsanou cestou (auth/sign_path)
+      const path = `/api/sosac/stream?u=${encodeURIComponent(pick.url)}`;
+      const signed = await this._ws({ type: 'auth/sign_path', path, expires: 3600 });
+      playStream(item.title, signed.path);
       this._view = 'player';
       this._render();
     } catch (e) {

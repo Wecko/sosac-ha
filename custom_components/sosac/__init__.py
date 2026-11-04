@@ -11,7 +11,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import SosacApi
 from .const import CONF_LOCATION, CONF_PASSWORD, CONF_USERNAME, DOMAIN
-from . import websocket_api
+from . import http_view, websocket_api
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +36,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         lang=hass.config.language,
     )
     hass.data.setdefault(DOMAIN, {}).setdefault("api", {})[entry.entry_id] = api
+
+    if "http_view" not in hass.data[DOMAIN]:
+        http_view.async_register(hass)
+        hass.data[DOMAIN]["http_view"] = True
 
     await _register_card_static_path(hass)
     return True
