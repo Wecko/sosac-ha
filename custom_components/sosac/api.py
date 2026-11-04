@@ -192,6 +192,10 @@ class SosacApi:
         return result
 
     def _search_or_movie_item(self, v: dict) -> dict:
+        link = v.get("l") or ""
+        # seriál: 'l' není stream ID, ale URL na seznam epizod (serialy/...)
+        if "serialy" in link or link.startswith("http"):
+            return _series_item(v, self._lang)
         item = _movie_item(v, self._lang)
         # epizoda ve výsledcích hledání/novinek: má klíče t/s/e
         if "t" in v and "s" in v:
