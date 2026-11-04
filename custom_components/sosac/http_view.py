@@ -32,26 +32,12 @@ _HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding",
 class SosacStreamView(HomeAssistantView):
     url = PROXY_PATH
     name = "api:sosac:stream"
-    requires_auth = False  # autorizaci řešíme podepsanou cestou
+    requires_auth = True  # auth middleware ověří authSig (podepsaná cesta)
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._hass = hass
 
     async def get(self, request: web.Request) -> web.StreamResponse:
-        try:
-            from homeassistant.components.http.auth import (
-                async_validate_signed_request,
-            )
-        except ImportError:
-            try:
-                from homeassistant.components.http.auth import (
-                    validate_signed_request as async_validate_signed_request,
-                )
-            except ImportError:
-                raise web.HTTPNotImplemented(
-                    text="Signed requests nejsou v této verzi HA dostupné")
-        if not async_validate_signed_request(request):
-            raise web.HTTPUnauthorized()
 
         target = request.query.get("u", "")
         host = urlparse(target).hostname or ""
