@@ -13,7 +13,7 @@
 const VIEWS = ['player', 'movies', 'series', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály', search: 'Hledat' };
 
-const CARD_VERSION = '0.1.2';
+const CARD_VERSION = '0.1.3';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -155,7 +155,7 @@ class SosacCard extends HTMLElement {
 
   async _browse(id, title) {
     try {
-      const res = await this._ws({ type: 'sosac/browse', id: id || '' });
+      const res = await this._ws({ type: 'sosac/browse', path: id || '' });
       this._items = res.items || [];
       this._renderList();
     } catch (e) {
@@ -167,7 +167,7 @@ class SosacCard extends HTMLElement {
   async _browseRoot() {
     // root rozdělíme podle prefixu na Filmy/Seriály záložky
     try {
-      const res = await this._ws({ type: 'sosac/browse', id: '' });
+      const res = await this._ws({ type: 'sosac/browse', path: '' });
       const all = res.items || [];
       this._roots = {
         movies: all.filter((i) => i.title.startsWith('Filmy')),
@@ -197,7 +197,7 @@ class SosacCard extends HTMLElement {
   async _play(item) {
     this._toast('Resolvuji stream…');
     try {
-      const res = await this._ws({ type: 'sosac/resolve', id: item.id });
+      const res = await this._ws({ type: 'sosac/resolve', video_id: item.id });
       const streams = res.streams || [];
       if (!streams.length) { this._toast('Žádný stream nenalezen'); return; }
       const pick = streams.find((s) => s.quality === '720p' && /cs|cz/i.test(s.lang))
