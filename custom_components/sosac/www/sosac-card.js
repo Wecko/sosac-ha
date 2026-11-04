@@ -13,7 +13,7 @@
 const VIEWS = ['player', 'movies', 'series', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály', search: 'Hledat' };
 
-const CARD_VERSION = '0.1.3';
+const CARD_VERSION = '0.1.4';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
