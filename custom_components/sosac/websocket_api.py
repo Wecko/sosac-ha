@@ -15,6 +15,9 @@ from homeassistant.core import HomeAssistant, callback
 from .const import DOMAIN
 
 
+_REGISTERED: set[str] = set()
+
+
 @callback
 def async_register(hass: HomeAssistant) -> None:
     for cmd, handler, schema in (
@@ -22,12 +25,12 @@ def async_register(hass: HomeAssistant) -> None:
         ("sosac/search", ws_search, {vol.Required("query"): str}),
         ("sosac/resolve", ws_resolve, {vol.Required("video_id"): str}),
     ):
-        if not hass.data.get(DOMAIN, {}).get(f"_ws_{cmd}"):
+        if cmd not in _REGISTERED:
             ws.async_register_command(
                 hass, cmd, handler,
                 vol.All(ws.BASE_COMMAND_MESSAGE_SCHEMA.extend(schema)),
             )
-            hass.data.setdefault(DOMAIN, {})[f"_ws_{cmd}"] = True
+            _REGISTERED.add(cmd)
 
 
 def _api(hass):
