@@ -15,7 +15,6 @@ import aiohttp
 from aiohttp import web
 
 from homeassistant.components.http import HomeAssistantView
-from homeassistant.components.http.auth import async_sign_path, async_validate_signed_request
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
@@ -39,6 +38,18 @@ class SosacStreamView(HomeAssistantView):
         self._hass = hass
 
     async def get(self, request: web.Request) -> web.StreamResponse:
+        try:
+            from homeassistant.components.http.auth import (
+                async_validate_signed_request,
+            )
+        except ImportError:
+            try:
+                from homeassistant.components.http.auth import (
+                    validate_signed_request as async_validate_signed_request,
+                )
+            except ImportError:
+                raise web.HTTPNotImplemented(
+                    text="Signed requests nejsou v této verzi HA dostupné")
         if not async_validate_signed_request(request):
             raise web.HTTPUnauthorized()
 
