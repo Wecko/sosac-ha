@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sosáč",
+        "description": "The catalogue is public — credentials (StreamujTV/sosac.tv account) are only needed for premium streams.",
+        "data": {
+          "username": "Username (optional)",
+          "password": "Password (optional)",
+          "location": "Location (optional, 1/2)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to sosac.tv"
+    },
+    "abort": {}
+  }
+}

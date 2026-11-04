@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(wc)",
+      "Exec(curl)",
+      "Exec(break)"
+    ]
+  }
+}

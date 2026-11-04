@@ -1,0 +1,19 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Sosáč",
+        "description": "Katalog je veřejný — přihlašovací údaje (StreamujTV/sosac.tv účet) jsou potřeba jen pro premium streamy.",
+        "data": {
+          "username": "Uživatelské jméno (volitelné)",
+          "password": "Heslo (volitelné)",
+          "location": "Location (volitelné, 1/2)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nepodařilo se připojit k sosac.tv"
+    },
+    "abort": {}
+  }
+}
