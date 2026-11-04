@@ -13,7 +13,7 @@
 const VIEWS = ['player', 'movies', 'series', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály', search: 'Hledat' };
 
-const CARD_VERSION = '0.1.0';
+const CARD_VERSION = '0.1.1';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -122,7 +122,10 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 class SosacCard extends HTMLElement {
-  set hass(hass) { this._hass = hass; }
+  set hass(hass) {
+    this._hass = hass;
+    if (this._root && !this._roots) this._browseRoot();
+  }
 
   setConfig(config) {
     this._config = config || {};
@@ -137,7 +140,7 @@ class SosacCard extends HTMLElement {
     this._items = [];
     this._search = '';
     this._render();
-    this._browseRoot();
+    if (this._hass && !this._roots) this._browseRoot();
   }
 
   connectedCallback() { this._syncMini(); }
@@ -146,6 +149,7 @@ class SosacCard extends HTMLElement {
   static getStubConfig() { return {}; }
 
   _ws(payload) {
+    if (!this._hass) return Promise.reject(new Error('hass není k dispozici'));
     return this._hass.callWS(payload);
   }
 
