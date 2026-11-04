@@ -12,6 +12,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import SosacApi
 from .const import CONF_LOCATION, CONF_PASSWORD, CONF_USERNAME, DOMAIN
 from . import http_view, websocket_api
+from .history_store import SosacHistory
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +37,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         lang=hass.config.language,
     )
     hass.data.setdefault(DOMAIN, {}).setdefault("api", {})[entry.entry_id] = api
+
+    if "history" not in hass.data[DOMAIN]:
+        history = SosacHistory(hass)
+        await history.async_load()
+        hass.data[DOMAIN]["history"] = history
 
     if "http_view" not in hass.data[DOMAIN]:
         http_view.async_register(hass)
@@ -71,3 +77,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 def get_api(hass: HomeAssistant) -> SosacApi | None:
     apis = (hass.data.get(DOMAIN) or {}).get("api") or {}
     return next(iter(apis.values()), None)
+
+
+def get_history(hass: HomeAssistant) -> SosacHistory | None:
+    return (hass.data.get(DOMAIN) or {}).get("history")

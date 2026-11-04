@@ -14,7 +14,7 @@ const VIEWS = ['player', 'movies', 'series', 'history', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály',
   history: 'Historie', search: 'Hledat' };
 
-const CARD_VERSION = '0.2.1';
+const CARD_VERSION = '0.3.0';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -130,34 +130,22 @@ async function proxySrc(st, url) {
   return signed.path;
 }
 
-// --- historie sledování + pozice -------------------------------------------
-const HISTORY_MAX = 50;
-
-function getHistory() {
-  try {
-    const h = JSON.parse(localStorage.getItem('sosac-history') || '[]');
-    return Array.isArray(h) ? h : [];
-  } catch { return []; }
+// --- historie sledování + pozice (sdílené přes HA úložiště) -----------------
+function wsSend(payload) {
+  const st = store();
+  if (!st.ws) return Promise.resolve(null);
+  return st.ws(payload).catch((e) => { console.error('[sosac-card] ws:', e); return null; });
 }
 
 function pushHistory(item) {
-  try {
-    const h = getHistory().filter((e) => e.id !== item.id);
-    h.unshift({ id: item.id, title: item.title, img: item.img || null,
-                ts: Date.now() });
-    localStorage.setItem('sosac-history', JSON.stringify(h.slice(0, HISTORY_MAX)));
-  } catch { /* ok */ }
+  wsSend({ type: 'sosac/history_push', item: {
+    id: item.id, title: item.title, img: item.img || null, ts: Date.now(),
+  } });
 }
 
-function posKey(id) { return 'sosac-pos-' + id; }
-function getPos(id) {
-  try { return +localStorage.getItem(posKey(id)) || 0; } catch { return 0; }
-}
-function setPos(id, t) {
-  try { localStorage.setItem(posKey(id), String(Math.floor(t))); } catch { /* ok */ }
-}
-function clearPos(id) {
-  try { localStorage.removeItem(posKey(id)); } catch { /* ok */ }
+function setPos(id, t, duration) {
+  wsSend({ type: 'sosac/position_set', video_id: id,
+           pos: Math.floor(t), duration: duration || 0 });
 }
 
 // navázání pozice + periodické ukládání
@@ -165,10 +153,7 @@ function trackPosition(st, id) {
   clearInterval(st.posTimer);
   st.posTimer = setInterval(() => {
     if (st.video && !st.video.paused && st.video.duration > 60) {
-      const t = st.video.currentTime;
-      // neukládat prvních 30 s a posledních 60 s (dokoukané)
-      if (t > 30 && st.video.duration - t > 60) setPos(id, t);
-      if (st.video.duration - t <= 60) clearPos(id);
+      setPos(id, st.video.currentTime, st.video.duration);
     }
   }, 5000);
 }
@@ -277,7 +262,8 @@ function playStream(item, streams, index) {
   st.currentItem = item;
   pushHistory(item);
   trackPosition(st, item.id);
-  const resumePos = getPos(item.id);
+  const resumePos = st.resumePos || 0;
+  st.resumePos = 0;
   if (resumePos > 0) {
     const v = st.video;
     const resume = () => { v.currentTime = resumePos; v.removeEventListener('loadedmetadata', resume); };
@@ -331,9 +317,7 @@ function stopPlayback() {
   if (st.video) {
     // poslední uložení pozice před zavřením
     if (st.currentItem && st.video.duration > 60) {
-      const t = st.video.currentTime;
-      if (t > 30 && st.video.duration - t > 60) setPos(st.currentItem.id, t);
-      else if (st.video.duration - t <= 60) clearPos(st.currentItem.id);
+      setPos(st.currentItem.id, st.video.currentTime, st.video.duration);
     }
     st.video.pause(); st.video.removeAttribute('src'); st.video.load();
   }
@@ -445,6 +429,9 @@ class SosacCard extends HTMLElement {
       if (idx < 0) idx = streams.findIndex((s) => s.quality === '720p');
       if (idx < 0) idx = 0;
       store().ws = (p) => this._ws(p);
+      const posRes = await this._ws({ type: 'sosac/position', video_id: item.id })
+        .catch(() => null);
+      store().resumePos = posRes ? posRes.pos || 0 : 0;
       playStream(item, streams, idx);
       this._view = 'player';
       this._render();
@@ -621,14 +608,8 @@ class SosacCard extends HTMLElement {
       list.innerHTML = '';
       this._renderSearch();
     } else if (this._view === 'history') {
-      this._items = getHistory().map((e) => ({
-        ...e, type: 'video',
-        year: new Date(e.ts).toLocaleString('cs-CZ',
-          { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        quality: getPos(e.id) ? '▶ ' + Math.floor(getPos(e.id) / 60) + ' min' : null,
-      }));
-      list.innerHTML = '';
-      this._renderItems(list);
+      list.innerHTML = '<div class="empty">Načítám…</div>';
+      this._renderHistory();
     } else {
       this._renderList();
     }
@@ -638,11 +619,10 @@ class SosacCard extends HTMLElement {
   _renderNav() {
     const nav = this._root.querySelector('.nav');
     if (this._view === 'history') {
-      nav.innerHTML = getHistory().length
-        ? `<button class="nav-back" id="clear-history">Vymazat historii</button>` : '';
-      nav.querySelector('#clear-history')?.addEventListener('click', (ev) => {
+      nav.innerHTML = `<button class="nav-back" id="clear-history">Vymazat historii</button>`;
+      nav.querySelector('#clear-history')?.addEventListener('click', async (ev) => {
         ev.stopPropagation();
-        try { localStorage.removeItem('sosac-history'); } catch { /* ok */ }
+        await this._ws({ type: 'sosac/history_clear' }).catch(() => {});
         this._render();
       });
       return;
@@ -653,6 +633,21 @@ class SosacCard extends HTMLElement {
       ? `<button class="nav-back">${icon('back', 16)} Zpět</button>
          <span class="crumbs">${crumbs}</span>`
       : '';
+  }
+
+  async _renderHistory() {
+    try {
+      const res = await this._ws({ type: 'sosac/history' });
+      const items = res ? res.items || [] : [];
+      this._items = items.map((e) => ({
+        ...e, type: 'video',
+        year: new Date(e.ts).toLocaleString('cs-CZ',
+          { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      }));
+      if (this._view === 'history') this._renderList();
+    } catch (e) {
+      console.error('[sosac-card] history:', e);
+    }
   }
 
   _renderSearch() {
