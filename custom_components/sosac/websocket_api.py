@@ -18,18 +18,24 @@ from .const import DOMAIN
 _REGISTERED: set[str] = set()
 
 
+def _msg_schema(cmd: str, extra: dict) -> vol.Schema:
+    """Schéma pro celou ws zprávu včetně literálu `type` — stejný vzor
+    jako interní příkazy HA (robustní vůči vol/probatio rozdílům verzí)."""
+    return vol.Schema(
+        {vol.Required("type"): cmd, **extra},
+        extra=vol.ALLOW_EXTRA,
+    )
+
+
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    for cmd, handler, schema in (
+    for cmd, handler, extra in (
         ("sosac/browse", ws_browse, {vol.Optional("path", default=""): str}),
         ("sosac/search", ws_search, {vol.Required("query"): str}),
         ("sosac/resolve", ws_resolve, {vol.Required("video_id"): str}),
     ):
         if cmd not in _REGISTERED:
-            ws.async_register_command(
-                hass, cmd, handler,
-                vol.All(ws.BASE_COMMAND_MESSAGE_SCHEMA.extend(schema)),
-            )
+            ws.async_register_command(hass, cmd, handler, _msg_schema(cmd, extra))
             _REGISTERED.add(cmd)
 
 
