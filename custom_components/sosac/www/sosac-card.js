@@ -13,7 +13,7 @@
 const VIEWS = ['player', 'movies', 'series', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály', search: 'Hledat' };
 
-const CARD_VERSION = '0.1.7';
+const CARD_VERSION = '0.1.8';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -51,6 +51,8 @@ function store() {
       overlay: null,   // overlay div v document.body
       video: null,     // <video>
       nowPlaying: null,// {title}
+      streams: null,   // varianty streamu (kvalita/stopa)
+      streamIndex: 0,
       listeners: new Set(),
     };
   }
@@ -74,6 +76,11 @@ function ensurePlayer() {
   const title = document.createElement('div');
   title.style.cssText = 'flex:1;font:500 15px/1.3 Roboto,sans-serif;overflow:hidden;' +
     'text-overflow:ellipsis;white-space:nowrap;';
+  const quality = document.createElement('select');
+  quality.title = 'Kvalita / stopa';
+  quality.style.cssText = 'display:none;background:#222;color:#eee;border:1px solid #444;' +
+    'border-radius:6px;padding:4px 6px;font:400 13px Roboto,sans-serif;';
+  quality.onchange = () => switchStream(+quality.value);
   const closeBtn = document.createElement('button');
   closeBtn.innerHTML = icon('close', 26);
   closeBtn.title = 'Zavřít';
@@ -84,7 +91,7 @@ function ensurePlayer() {
   fsBtn.title = 'Celá obrazovka';
   fsBtn.style.cssText = 'background:none;border:none;color:#eee;cursor:pointer;padding:4px;';
   fsBtn.onclick = () => { if (st.video) st.video.requestFullscreen?.(); };
-  bar.append(title, fsBtn, closeBtn);
+  bar.append(title, quality, fsBtn, closeBtn);
   const video = document.createElement('video');
   video.controls = true;
   video.playsInline = true;
@@ -94,20 +101,58 @@ function ensurePlayer() {
   st.overlay = overlay;
   st.video = video;
   st.titleEl = title;
+  st.qualityEl = quality;
   video.addEventListener('play', emit);
   video.addEventListener('pause', emit);
   video.addEventListener('ended', emit);
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && st.overlay.style.display !== 'none') stopPlayback();
+  });
   return st;
 }
 
-function playStream(title, url) {
+function streamLabel(s) {
+  const parts = [];
+  if (s.quality) parts.push(s.quality);
+  if (s.lang) parts.push(s.lang);
+  return parts.join(' · ') || 'stream';
+}
+
+function playStream(title, streams, index) {
   const st = ensurePlayer();
   st.titleEl.textContent = title;
   st.nowPlaying = title;
-  st.video.src = url;
+  st.streams = streams;
+  st.streamIndex = index;
+  if (streams.length > 1) {
+    st.qualityEl.innerHTML = streams.map((s, i) =>
+      `<option value="${i}"${i === index ? ' selected' : ''}>${esc(streamLabel(s))}</option>`).join('');
+    st.qualityEl.style.display = '';
+  } else {
+    st.qualityEl.style.display = 'none';
+  }
+  st.video.src = streams[index].url;
   st.overlay.style.display = 'flex';
   st.video.play().catch(() => {});
   emit();
+}
+
+function switchStream(index) {
+  const st = store();
+  if (!st.streams || index === st.streamIndex) return;
+  st.streamIndex = index;
+  try {
+    localStorage.setItem('sosac-quality', st.streams[index].quality || '');
+  } catch { /* ok */ }
+  const pos = st.video.currentTime || 0;
+  const v = st.video;
+  v.src = st.streams[index].url;
+  const resume = () => {
+    v.currentTime = pos;
+    v.removeEventListener('loadedmetadata', resume);
+  };
+  v.addEventListener('loadedmetadata', resume);
+  v.play().catch(() => {});
 }
 
 function stopPlayback() {
@@ -200,19 +245,25 @@ class SosacCard extends HTMLElement {
       const res = await this._ws({ type: 'sosac/resolve', video_id: item.id });
       const streams = res.streams || [];
       if (!streams.length) { this._toast('Žádný stream nenalezen'); return; }
-      const pick = streams.find((s) => s.quality === '720p' && /cs|cz/i.test(s.lang))
-        || streams.find((s) => s.quality === '720p')
-        || streams[0];
-      // Proxy přes HA jen jako fallback pro HTTP streamy na HTTPS
-      // dashboardu (mixed content). Backend vrací HTTPS URL, takže
-      // normálně jede video přímo internetem klienta.
-      let src = pick.url;
-      if (location.protocol === 'https:' && /^http:\/\//i.test(src)) {
-        const path = `/api/sosac/stream?u=${encodeURIComponent(pick.url)}`;
-        const signed = await this._ws({ type: 'auth/sign_path', path, expires: 3600 });
-        src = signed.path;
+      // Proxy přes HA jen pro HTTP streamy na HTTPS dashboardu
+      // (mixed content). Backend vrací HTTPS URL → normálně přímé URL.
+      if (location.protocol === 'https:') {
+        for (const s of streams) {
+          if (/^http:\/\//i.test(s.url)) {
+            const path = `/api/sosac/stream?u=${encodeURIComponent(s.url)}`;
+            const signed = await this._ws({ type: 'auth/sign_path', path, expires: 3600 });
+            s.url = signed.path;
+          }
+        }
       }
-      playStream(item.title, src);
+      // preference: uložená kvalita > 720p cs > 720p > první
+      let pref = '';
+      try { pref = localStorage.getItem('sosac-quality') || ''; } catch { /* ok */ }
+      let idx = streams.findIndex((s) => s.quality === pref);
+      if (idx < 0) idx = streams.findIndex((s) => s.quality === '720p' && /cs|cz/i.test(s.lang || ''));
+      if (idx < 0) idx = streams.findIndex((s) => s.quality === '720p');
+      if (idx < 0) idx = 0;
+      playStream(item.title, streams, idx);
       this._view = 'player';
       this._render();
     } catch (e) {
