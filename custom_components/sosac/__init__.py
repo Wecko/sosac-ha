@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -36,7 +37,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     card_path = os.path.join(os.path.dirname(__file__), "www", "sosac-card.js")
     try:
         await hass.http.async_register_static_paths(
-            [{"url_path": CARD_URL, "path": card_path, "cache_headers": False}]
+            [StaticPathConfig(CARD_URL, card_path, cache_headers=False)]
         )
     except RuntimeError as err:  # cesta už registrovaná (reload integrace)
         _LOGGER.debug("Static path už existuje: %s", err)
