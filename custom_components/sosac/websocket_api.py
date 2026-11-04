@@ -44,6 +44,7 @@ def _api(hass):
     return get_api(hass)
 
 
+@ws.async_response
 async def ws_browse(hass: HomeAssistant, connection, msg) -> None:
     api = _api(hass)
     if api is None:
@@ -57,6 +58,7 @@ async def ws_browse(hass: HomeAssistant, connection, msg) -> None:
     connection.send_result(msg["id"], {"items": items})
 
 
+@ws.async_response
 async def ws_search(hass: HomeAssistant, connection, msg) -> None:
     api = _api(hass)
     if api is None:
@@ -70,6 +72,7 @@ async def ws_search(hass: HomeAssistant, connection, msg) -> None:
     connection.send_result(msg["id"], {"items": items})
 
 
+@ws.async_response
 async def ws_resolve(hass: HomeAssistant, connection, msg) -> None:
     api = _api(hass)
     if api is None:
