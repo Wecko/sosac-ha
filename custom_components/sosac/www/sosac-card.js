@@ -13,7 +13,7 @@
 const VIEWS = ['player', 'movies', 'series', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály', search: 'Hledat' };
 
-const CARD_VERSION = '0.1.1';
+const CARD_VERSION = '0.1.2';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -159,6 +159,7 @@ class SosacCard extends HTMLElement {
       this._items = res.items || [];
       this._renderList();
     } catch (e) {
+      console.error('[sosac-card] browse:', e);
       this._toast(e.message || 'Načtení selhalo');
     }
   }
@@ -177,6 +178,7 @@ class SosacCard extends HTMLElement {
         this._renderList();
       }
     } catch (e) {
+      console.error('[sosac-card] browseRoot:', e);
       this._toast(e.message || 'Integrace Sosáč není dostupná');
     }
   }
@@ -187,6 +189,7 @@ class SosacCard extends HTMLElement {
       this._items = res.items || [];
       this._renderList();
     } catch (e) {
+      console.error('[sosac-card] search:', e);
       this._toast(e.message || 'Hledání selhalo');
     }
   }
@@ -204,6 +207,7 @@ class SosacCard extends HTMLElement {
       this._view = 'player';
       this._render();
     } catch (e) {
+      console.error('[sosac-card] resolve:', e);
       this._toast(e.message || 'Resolve selhal');
     }
   }
