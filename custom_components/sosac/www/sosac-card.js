@@ -14,7 +14,7 @@ const VIEWS = ['player', 'movies', 'series', 'history', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály',
   history: 'Historie', search: 'Hledat' };
 
-const CARD_VERSION = '0.3.1';
+const CARD_VERSION = '0.3.2';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -384,21 +384,21 @@ function ensurePlayer() {
   bar.append(title, quality, eqBtn, settingsBtn, fsBtn, closeBtn);
   // EQ panel = poloprůhledný překryv přes video, layout se nehýbe
   const eqPanel = document.createElement('div');
-  eqPanel.style.cssText = 'position:absolute;top:12px;left:50%;transform:translateX(-50%);' +
-    'z-index:2;display:none;gap:14px;align-items:flex-start;padding:12px 18px;' +
-    'background:rgba(15,15,15,.82);backdrop-filter:blur(4px);border-radius:12px;' +
-    'box-shadow:0 4px 24px rgba(0,0,0,.5);color:#eee;';
+  // EQ panel ve flow pod horní lištou — video se posune dolů, nepřekrývá se
+  eqPanel.style.cssText = 'width:100%;max-width:1100px;display:none;gap:14px;' +
+    'align-items:flex-start;justify-content:center;padding:8px 14px 14px;' +
+    'box-sizing:border-box;color:#eee;';
   const settingsPanel = document.createElement('div');
   settingsPanel.style.cssText = 'width:100%;max-width:1100px;display:none;gap:12px;' +
     'align-items:center;padding:8px 14px 14px;box-sizing:border-box;';
   const video = document.createElement('video');
   video.controls = true;
   video.playsInline = true;
-  video.style.cssText = 'width:100%;max-width:1100px;max-height:calc(100vh - 60px);background:#000;display:block;';
+  video.style.cssText = 'width:100%;max-width:1100px;max-height:calc(100vh - 60px);background:#000;display:block;flex-shrink:1;min-height:0;';
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:relative;width:100%;max-width:1100px;display:flex;';
-  wrap.append(video, eqPanel);
-  overlay.append(bar, settingsPanel, wrap);
+  wrap.style.cssText = 'position:relative;width:100%;max-width:1100px;display:flex;min-height:0;flex-shrink:1;';
+  wrap.append(video);
+  overlay.append(bar, settingsPanel, eqPanel, wrap);
   document.body.appendChild(overlay);
   st.overlay = overlay;
   st.video = video;
