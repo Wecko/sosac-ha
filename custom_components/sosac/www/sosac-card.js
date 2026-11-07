@@ -14,7 +14,7 @@ const VIEWS = ['player', 'movies', 'series', 'history', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály',
   history: 'Historie', search: 'Hledat' };
 
-const CARD_VERSION = '0.3.5';
+const CARD_VERSION = '0.3.6';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -222,6 +222,7 @@ async function enableEq(st) {
   if (isSameOriginSrc(st.video.src)) { eqActivated(st); return; }
   // cross-origin → EQ vyžaduje proxy; video přepneme až po načtení proxy,
   // při selhání se vrátí přímé URL a přehrávání běží dál bez EQ
+  eqSetNote(st, 'Načítám přes proxy…');
   try {
     await proxiedUrl(st, s);
   } catch (e) {
