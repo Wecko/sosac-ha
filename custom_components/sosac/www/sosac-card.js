@@ -14,7 +14,7 @@ const VIEWS = ['player', 'movies', 'series', 'history', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály',
   history: 'Historie', search: 'Hledat' };
 
-const CARD_VERSION = '0.3.3';
+const CARD_VERSION = '0.3.4';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -389,17 +389,20 @@ function ensurePlayer() {
     'z-index:2;display:none;gap:14px;align-items:flex-start;padding:12px 18px;' +
     'background:rgba(15,15,15,.82);backdrop-filter:blur(4px);border-radius:12px;' +
     'box-shadow:0 4px 24px rgba(0,0,0,.5);color:#eee;';
+  // settings panel = překryvná vrstva nad video (stejně jako EQ), layout se nehýbe
   const settingsPanel = document.createElement('div');
-  settingsPanel.style.cssText = 'width:100%;max-width:1100px;display:none;gap:12px;' +
-    'align-items:center;padding:8px 14px 14px;box-sizing:border-box;';
+  settingsPanel.style.cssText = 'position:absolute;top:12px;right:12px;z-index:2;' +
+    'display:none;gap:12px;align-items:center;padding:10px 14px;' +
+    'background:rgba(15,15,15,.82);backdrop-filter:blur(4px);border-radius:12px;' +
+    'box-shadow:0 4px 24px rgba(0,0,0,.5);';
   const video = document.createElement('video');
   video.controls = true;
   video.playsInline = true;
   video.style.cssText = 'width:100%;max-width:1100px;max-height:calc(100vh - 60px);background:#000;display:block;flex-shrink:1;min-height:0;';
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:relative;width:100%;max-width:1100px;display:flex;min-height:0;flex-shrink:1;';
-  wrap.append(video, eqPanel);
-  overlay.append(bar, settingsPanel, wrap);
+  wrap.append(video, eqPanel, settingsPanel);
+  overlay.append(bar, wrap);
   document.body.appendChild(overlay);
   st.overlay = overlay;
   st.video = video;
@@ -535,19 +538,21 @@ function switchStream(index) {
   const v = st.video;
   const s = st.streams[index];
   const applySrc = () => {
+    const wasPlaying = !v.paused;
     v.src = (st.eqCtx && s.proxyUrl) ? s.proxyUrl : s.url;
+    const resume = () => {
+      v.currentTime = pos;
+      if (wasPlaying) v.play().catch(() => {});
+      v.removeEventListener('loadedmetadata', resume);
+    };
+    v.addEventListener('loadedmetadata', resume);
+    v.play().catch(() => {});
   };
   if (st.eqCtx && !s.proxyUrl) {
     proxiedUrl(st, s).then(applySrc).catch(() => { applySrc(); });
   } else {
     applySrc();
   }
-  const resume = () => {
-    v.currentTime = pos;
-    v.removeEventListener('loadedmetadata', resume);
-  };
-  v.addEventListener('loadedmetadata', resume);
-  v.play().catch(() => {});
 }
 
 function stopPlayback() {
