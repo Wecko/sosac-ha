@@ -26,10 +26,7 @@ PROXY_PATH = "/api/sosac/stream"
 _ALLOWED_SUFFIXES = ("streamuj.tv", "streamuj.cz")
 
 _HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding",
-               "content-encoding", "te", "trailer", "upgrade",
-               # content-length nesmí projít — streamujeme chunked a délku
-               # necháváme dopočítat aiohttp (jinak RuntimeError → HTTP 500)
-               "content-length"}
+               "content-encoding", "te", "trailer", "upgrade"}
 
 
 class SosacStreamView(HomeAssistantView):
@@ -70,7 +67,9 @@ class SosacStreamView(HomeAssistantView):
         for key, value in upstream.headers.items():
             if key.lower() not in _HOP_BY_HOP:
                 resp.headers[key] = value
-        resp.enable_chunked_encoding()
+        # NE chunked — Content-Length se předává z upstreamu a body má
+        # známou délku. Chunked stream se přes reverzní proxy (Cloudflare
+        # Tunnel) throttleoval na ~74 KB/s; fixed-length jede plnou rychlostí.
         await resp.prepare(request)
         try:
             async for chunk in upstream.content.iter_chunked(64 * 1024):
