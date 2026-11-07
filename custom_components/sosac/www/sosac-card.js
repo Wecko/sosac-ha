@@ -14,7 +14,7 @@ const VIEWS = ['player', 'movies', 'series', 'history', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály',
   history: 'Historie', search: 'Hledat' };
 
-const CARD_VERSION = '0.3.4';
+const CARD_VERSION = '0.3.5';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -278,10 +278,21 @@ function toggleFullscreen(st) {
     return;
   }
   // fullscreen celého overlaye — horní lišta a EQ panel zůstanou viditelné
+  // fallback na nativní fullscreen videa (WebView/Companion/iOS, nebo když
+  // prohlížeč overlay fs odmítne — requestFullscreen vrací rejected promise)
+  const videoFs = () => {
+    if (st.video.webkitEnterFullscreen) st.video.webkitEnterFullscreen();
+    else if (st.video.requestFullscreen) st.video.requestFullscreen().catch(() => {});
+  };
   const req = st.overlay.requestFullscreen || st.overlay.webkitRequestFullscreen;
-  if (req) { req.call(st.overlay); return; }
-  // iOS Safari / HA Companion app — nativní fullscreen videa
-  if (st.video.webkitEnterFullscreen) st.video.webkitEnterFullscreen();
+  if (req) {
+    try {
+      const p = req.call(st.overlay);
+      if (p && p.catch) { p.catch(() => videoFs()); return; }
+      return;
+    } catch { /* fall through */ }
+  }
+  videoFs();
 }
 // --- panel nastavení + buffer indikátor -------------------------------------
 function buildSettingsPanel(st) {
