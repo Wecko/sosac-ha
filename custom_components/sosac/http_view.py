@@ -72,7 +72,10 @@ class SosacStreamView(HomeAssistantView):
         # Tunnel) throttleoval na ~74 KB/s; fixed-length jede plnou rychlostí.
         await resp.prepare(request)
         try:
-            async for chunk in upstream.content.iter_chunked(64 * 1024):
+            # velké chunky — každý write() čeká na drain a přes reverzní
+            # proxy (Cloudflare Tunnel) trvá cyklus ~0.8 s; 64KB chunky
+            # dávaly ~74 KB/s, 4MB chunky jedou ~MB/s
+            async for chunk in upstream.content.iter_any(4 * 1024 * 1024):
                 await resp.write(chunk)
         except (ConnectionError, aiohttp.ClientError):
             pass
