@@ -26,7 +26,10 @@ PROXY_PATH = "/api/sosac/stream"
 _ALLOWED_SUFFIXES = ("streamuj.tv", "streamuj.cz")
 
 _HOP_BY_HOP = {"connection", "keep-alive", "transfer-encoding",
-               "content-encoding", "te", "trailer", "upgrade"}
+               "content-encoding", "te", "trailer", "upgrade",
+               # content-length nesmí projít — streamujeme chunked a délku
+               # necháváme dopočítat aiohttp (jinak RuntimeError → HTTP 500)
+               "content-length"}
 
 
 class SosacStreamView(HomeAssistantView):
@@ -44,7 +47,12 @@ class SosacStreamView(HomeAssistantView):
         if not target.startswith("http") or not host.endswith(_ALLOWED_SUFFIXES):
             raise web.HTTPBadRequest(text="Nepovolené URL")
 
-        headers = {}
+        headers = {
+            # streamuj CDN očekává stejné hlavičky jako probe v api.py,
+            # jinak může požadavek odmítnout (403) a EQ/proxy přehrávání umře
+            "User-Agent": "Mozilla/5.0",
+            "Referer": "http://www.streamuj.tv/mediaplayer/player.swf",
+        }
         if "Range" in request.headers:
             headers["Range"] = request.headers["Range"]
         session = async_get_clientsession(self._hass)
@@ -71,7 +79,10 @@ class SosacStreamView(HomeAssistantView):
             pass
         finally:
             upstream.release()
-        await resp.write_eof()
+        try:
+            await resp.write_eof()
+        except (ConnectionError, RuntimeError):
+            pass  # klient (video) odpojil — běžné u seek/stop
         return resp
 
 

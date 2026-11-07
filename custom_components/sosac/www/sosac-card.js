@@ -14,7 +14,7 @@ const VIEWS = ['player', 'movies', 'series', 'history', 'search'];
 const VIEW_TITLES = { player: 'Přehrávač', movies: 'Filmy', series: 'Seriály',
   history: 'Historie', search: 'Hledat' };
 
-const CARD_VERSION = '0.3.0';
+const CARD_VERSION = '0.3.1';
 (function versionGuard() {
   try {
     const key = 'sosac-card-version';
@@ -35,6 +35,8 @@ const ICONS = {
   series: 'M21,17H3V5H1V19A2,2 0 0,0 3,21H21M23,5H7A2,2 0 0,0 5,7V15A2,2 0 0,0 7,17H23A2,2 0 0,0 25,15V7A2,2 0 0,0 23,5Z',
   folder: 'M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z',
   fullscreen: 'M5,5H10V7H7V10H5V5M14,5H19V10H17V7H14V5M17,14H19V19H14V17H17V14M10,17V19H5V14H7V17H10Z',
+  fullscreenExit: 'M14,14H19V16H16V19H14V14M5,14H10V19H8V16H5V14M19,10H14V5H16V8H19V10M10,5V10H5V8H8V5H10Z',
+  settings: 'M12,15.5A3.5,3.5 0 0,1 8.5,12A3.5,3.5 0 0,1 12,8.5A3.5,3.5 0 0,1 15.5,12A3.5,3.5 0 0,1 12,15.5M19.43,12.97C19.47,12.65 19.5,12.33 19.5,12C19.5,11.67 19.47,11.34 19.43,11L21.54,9.37C21.73,9.22 21.78,8.95 21.66,8.73L19.66,5.27C19.54,5.05 19.27,4.96 19.05,5.05L16.56,6.05C16.04,5.66 15.5,5.32 14.87,5.07L14.5,2.42C14.46,2.18 14.25,2 14,2H10C9.75,2 9.54,2.18 9.5,2.42L9.13,5.07C8.5,5.32 7.96,5.66 7.44,6.05L4.95,5.05C4.73,4.96 4.46,5.05 4.34,5.27L2.34,8.73C2.21,8.95 2.27,9.22 2.46,9.37L4.57,11C4.53,11.34 4.5,11.67 4.5,12C4.5,12.33 4.53,12.65 4.57,12.97L2.46,14.63C2.27,14.78 2.21,15.05 2.34,15.27L4.34,18.73C4.46,18.95 4.73,19.03 4.95,18.95L7.44,17.94C7.96,18.34 8.5,18.68 9.13,18.93L9.5,21.58C9.54,21.82 9.75,22 10,22H14C14.25,22 14.46,21.82 14.5,21.58L14.87,18.93C15.5,18.67 16.04,18.34 16.56,17.94L19.05,18.95C19.27,19.03 19.54,18.95 19.66,18.73L21.66,15.27C21.78,15.05 21.73,14.78 21.54,14.63L19.43,12.97Z',
   eq: 'M10,20H14V4H10M16,20H20V8H16M4,20H8V12H4V20Z',
 };
 function icon(name, size = 22) {
@@ -76,6 +78,21 @@ function eqGains() {
   return EQ_BANDS.map(() => 0);
 }
 
+// --- nastavení přehrávače (persistované) -----------------------------------
+const DEFAULT_SETTINGS = { speed: 1, seekStep: 10, autoResume: true };
+function getSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem('sosac-settings') || 'null');
+    if (s && typeof s === 'object') return { ...DEFAULT_SETTINGS, ...s };
+  } catch { /* ok */ }
+  return { ...DEFAULT_SETTINGS };
+}
+function saveSettings(patch) {
+  const s = { ...getSettings(), ...patch };
+  try { localStorage.setItem('sosac-settings', JSON.stringify(s)); } catch { /* ok */ }
+  return s;
+}
+
 function buildEqPanel(st) {
   const gains = eqGains();
   st.eqPanel.innerHTML = EQ_BANDS.map((f, i) => `
@@ -97,6 +114,17 @@ function buildEqPanel(st) {
     const val = st.eqPanel.querySelector(`[data-bandval="${band}"]`);
     if (val) val.textContent = (v > 0 ? '+' : '') + v;
   });
+  const off = document.createElement('button');
+  off.textContent = 'Vypnout EQ';
+  off.title = 'Vypnout ekvalizér (bypass)';
+  off.style.cssText = 'align-self:center;background:#333;border:1px solid #555;' +
+    'color:#ddd;border-radius:6px;padding:6px 10px;font:400 12px Roboto,sans-serif;cursor:pointer;';
+  off.onclick = () => disableEq(st);
+  const note = document.createElement('span');
+  note.style.cssText = 'display:none;align-self:center;font:400 12px Roboto,sans-serif;' +
+    'color:#ef9a9a;max-width:200px;';
+  st.eqNote = note;
+  st.eqPanel.append(off, note);
 }
 
 function ensureEqGraph(st) {
@@ -130,6 +158,13 @@ async function proxySrc(st, url) {
   return signed.path;
 }
 
+// URL vhodnou pro MediaElementSource — musí být same-origin, jinak Web Audio
+// zvuk umlčí. s.url už může být podepsaná proxy cesta (mixed content v _play).
+async function proxiedUrl(st, s) {
+  if (!s.proxyUrl) s.proxyUrl = s.url.startsWith('/') ? s.url : await proxySrc(st, s.url);
+  return s.proxyUrl;
+}
+
 // --- historie sledování + pozice (sdílené přes HA úložiště) -----------------
 function wsSend(payload) {
   const st = store();
@@ -158,28 +193,153 @@ function trackPosition(st, id) {
   }, 5000);
 }
 
-async function enableEq(st) {
-  // EQ potřebuje same-origin zdroj → proxy URL aktuálního streamu
-  try {
-    const s = st.streams && st.streams[st.streamIndex];
-    if (s && !s.proxyUrl) s.proxyUrl = await proxySrc(st, s.url);
-    if (s) {
-      const pos = st.video.currentTime || 0;
-      st.video.src = s.proxyUrl;
-      const resume = () => { st.video.currentTime = pos; st.video.removeEventListener('loadedmetadata', resume); };
-      st.video.addEventListener('loadedmetadata', resume);
-      st.video.play().catch(() => {});
-    }
-    if (!ensureEqGraph(st)) { st.eqBtn.title = 'EQ se nepodařilo inicializovat'; return; }
-    st.eqCtx.resume().catch(() => {});
-    st.eqOn = true;
-    st.eqBtn.style.color = '#4fc3f7';
-    st.eqPanel.style.display = 'flex';
-  } catch (e) {
-    console.error('[sosac-card] eq enable:', e);
-    st.eqBtn.title = 'EQ vyžaduje funkční HA proxy';
-  }
+function isSameOriginSrc(src) {
+  try { return new URL(src, location.href).origin === location.origin; }
+  catch { return false; }
 }
+
+function eqSetNote(st, msg) {
+  if (!st.eqNote) return;
+  st.eqNote.textContent = msg || '';
+  st.eqNote.style.display = msg ? '' : 'none';
+}
+
+function eqActivated(st) {
+  // graf se tvoří až na same-origin zdroji (jinak by Web Audio zvuk umlčel)
+  if (!ensureEqGraph(st)) { eqSetNote(st, 'EQ se nepodařilo inicializovat'); return; }
+  st.eqCtx.resume().catch(() => {});
+  // po případném bypassu obnovit uložené hodnoty sliderů
+  st.eqFilters.forEach((f, i) => { f.gain.value = eqGains()[i]; });
+  st.eqOn = true;
+  st.eqBtn.style.color = '#4fc3f7';
+  eqSetNote(st, '');
+}
+
+async function enableEq(st) {
+  const s = st.streams && st.streams[st.streamIndex];
+  st.eqPanel.style.display = 'flex';   // překryvný panel rovnou vidět
+  if (!s || !st.video.src) { eqSetNote(st, 'Nejprve spusť video'); return; }
+  if (isSameOriginSrc(st.video.src)) { eqActivated(st); return; }
+  // cross-origin → EQ vyžaduje proxy; video přepneme až po načtení proxy,
+  // při selhání se vrátí přímé URL a přehrávání běží dál bez EQ
+  try {
+    await proxiedUrl(st, s);
+  } catch (e) {
+    console.error('[sosac-card] eq proxy:', e);
+    eqSetNote(st, 'EQ nedostupný – HA proxy selhala');
+    return;
+  }
+  const v = st.video;
+  const pos = v.currentTime || 0;
+  const wasPlaying = !v.paused;
+  const cleanup = () => {
+    v.removeEventListener('loadedmetadata', onOk);
+    v.removeEventListener('error', onErr);
+  };
+  const onOk = () => {
+    cleanup();
+    v.currentTime = pos;
+    if (wasPlaying) v.play().catch(() => {});
+    eqActivated(st);
+  };
+  const onErr = () => {
+    cleanup();
+    s.proxyUrl = null;
+    v.src = s.url;
+    if (wasPlaying) v.play().catch(() => {});
+    eqSetNote(st, 'Proxy stream selhal – EQ nedostupný');
+  };
+  v.addEventListener('loadedmetadata', onOk);
+  v.addEventListener('error', onErr);
+  v.src = s.proxyUrl;
+}
+
+// Bypass: MediaElementSource nejde z grafu odpojit, takže "vypnutí" = všechny
+// filtry na 0 dB. Video musí zůstat na proxy URL — přímé cross-origin URL by
+// přes Web Audio umlčelo zvuk.
+function disableEq(st) {
+  if (st.eqFilters) st.eqFilters.forEach((f) => { f.gain.value = 0; });
+  st.eqOn = false;
+  st.eqBtn.style.color = '#888';
+  st.eqBtn.title = 'Ekvalizér';
+  st.eqPanel.style.display = 'none';
+}
+
+function syncFsIcon(st) {
+  const fs = document.fullscreenElement || document.webkitFullscreenElement;
+  st.fsBtn.innerHTML = icon(fs ? 'fullscreenExit' : 'fullscreen', 24);
+  st.fsBtn.title = fs ? 'Zrušit celou obrazovku' : 'Celá obrazovka';
+}
+
+function toggleFullscreen(st) {
+  const doc = document;
+  if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+    (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc);
+    return;
+  }
+  // fullscreen celého overlaye — horní lišta a EQ panel zůstanou viditelné
+  const req = st.overlay.requestFullscreen || st.overlay.webkitRequestFullscreen;
+  if (req) { req.call(st.overlay); return; }
+  // iOS Safari / HA Companion app — nativní fullscreen videa
+  if (st.video.webkitEnterFullscreen) st.video.webkitEnterFullscreen();
+}
+// --- panel nastavení + buffer indikátor -------------------------------------
+function buildSettingsPanel(st) {
+  const s = getSettings();
+  const p = st.settingsPanel;
+  p.innerHTML = '';
+  const lbl = (t) => {
+    const el = document.createElement('span');
+    el.textContent = t;
+    el.style.cssText = 'font:400 12px Roboto,sans-serif;color:#aaa;align-self:center;';
+    return el;
+  };
+  const mkSelect = (opts, cur) => {
+    const sel = document.createElement('select');
+    sel.style.cssText = 'background:#222;color:#eee;border:1px solid #444;' +
+      'border-radius:6px;padding:4px 6px;font:400 13px Roboto,sans-serif;';
+    sel.innerHTML = opts.map(([v, t]) =>
+      `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${t}</option>`).join('');
+    return sel;
+  };
+  const speed = mkSelect([[0.5, '0.5×'], [0.75, '0.75×'], [1, '1×'], [1.25, '1.25×'],
+    [1.5, '1.5×'], [1.75, '1.75×'], [2, '2×']], s.speed);
+  speed.onchange = () => {
+    const v = +speed.value;
+    saveSettings({ speed: v });
+    if (st.video) st.video.playbackRate = v;
+  };
+  const step = mkSelect([[5, '5 s'], [10, '10 s'], [15, '15 s'], [30, '30 s'],
+    [60, '60 s']], s.seekStep);
+  step.onchange = () => saveSettings({ seekStep: +step.value });
+  const autoWrap = document.createElement('label');
+  autoWrap.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;' +
+    'font:400 12px Roboto,sans-serif;color:#aaa;';
+  const auto = document.createElement('input');
+  auto.type = 'checkbox';
+  auto.checked = s.autoResume;
+  auto.style.accentColor = 'var(--primary-color,#03a9f4)';
+  auto.onchange = () => saveSettings({ autoResume: auto.checked });
+  autoWrap.append(auto, document.createTextNode('Navazovat na pozici'));
+  const buf = document.createElement('span');
+  buf.style.cssText = 'margin-left:auto;font:400 12px Roboto,sans-serif;color:#666;align-self:center;';
+  st.bufEl = buf;
+  p.append(lbl('Rychlost'), speed, lbl('Skok ←/→'), step, autoWrap, buf);
+}
+
+function updateBuf(st) {
+  if (!st.bufEl || !st.video || !st.video.buffered) return;
+  const v = st.video;
+  const b = v.buffered;
+  for (let i = b.length - 1; i >= 0; i--) {
+    if (b.start(i) <= v.currentTime) {
+      st.bufEl.textContent = `buffer ${Math.max(0, b.end(i) - v.currentTime).toFixed(0)} s`;
+      return;
+    }
+  }
+  st.bufEl.textContent = 'buffer 0 s';
+}
+
 function emit() {
   store().listeners.forEach((fn) => { try { fn(); } catch {} });
 }
@@ -212,20 +372,33 @@ function ensurePlayer() {
   closeBtn.title = 'Zavřít';
   closeBtn.style.cssText = 'background:none;border:none;color:#eee;cursor:pointer;padding:4px;';
   closeBtn.onclick = () => stopPlayback();
+  const settingsBtn = document.createElement('button');
+  settingsBtn.innerHTML = icon('settings', 24);
+  settingsBtn.title = 'Nastavení';
+  settingsBtn.style.cssText = 'background:none;border:none;color:#888;cursor:pointer;padding:4px;';
   const fsBtn = document.createElement('button');
   fsBtn.innerHTML = icon('fullscreen', 24);
   fsBtn.title = 'Celá obrazovka';
   fsBtn.style.cssText = 'background:none;border:none;color:#eee;cursor:pointer;padding:4px;';
-  fsBtn.onclick = () => { if (st.video) st.video.requestFullscreen?.(); };
-  bar.append(title, quality, eqBtn, fsBtn, closeBtn);
+  fsBtn.onclick = () => toggleFullscreen(st);
+  bar.append(title, quality, eqBtn, settingsBtn, fsBtn, closeBtn);
+  // EQ panel = poloprůhledný překryv přes video, layout se nehýbe
   const eqPanel = document.createElement('div');
-  eqPanel.style.cssText = 'width:100%;max-width:1100px;display:none;gap:14px;' +
-    'justify-content:center;padding:8px 14px 14px;box-sizing:border-box;color:#eee;';
+  eqPanel.style.cssText = 'position:absolute;top:12px;left:50%;transform:translateX(-50%);' +
+    'z-index:2;display:none;gap:14px;align-items:flex-start;padding:12px 18px;' +
+    'background:rgba(15,15,15,.82);backdrop-filter:blur(4px);border-radius:12px;' +
+    'box-shadow:0 4px 24px rgba(0,0,0,.5);color:#eee;';
+  const settingsPanel = document.createElement('div');
+  settingsPanel.style.cssText = 'width:100%;max-width:1100px;display:none;gap:12px;' +
+    'align-items:center;padding:8px 14px 14px;box-sizing:border-box;';
   const video = document.createElement('video');
   video.controls = true;
   video.playsInline = true;
-  video.style.cssText = 'width:100%;max-width:1100px;max-height:calc(100% - 60px);background:#000;';
-  overlay.append(bar, eqPanel, video);
+  video.style.cssText = 'width:100%;max-width:1100px;max-height:calc(100vh - 60px);background:#000;display:block;';
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;width:100%;max-width:1100px;display:flex;';
+  wrap.append(video, eqPanel);
+  overlay.append(bar, settingsPanel, wrap);
   document.body.appendChild(overlay);
   st.overlay = overlay;
   st.video = video;
@@ -233,8 +406,33 @@ function ensurePlayer() {
   st.qualityEl = quality;
   st.eqPanel = eqPanel;
   st.eqBtn = eqBtn;
+  st.fsBtn = fsBtn;
+  st.settingsPanel = settingsPanel;
   st.eqOn = false;
   buildEqPanel(st);
+  buildSettingsPanel(st);
+  // uložená hlasitost a rychlost z předchozích přehrávání
+  try {
+    const vol = JSON.parse(localStorage.getItem('sosac-volume') || 'null');
+    if (vol) { video.volume = vol.v; video.muted = !!vol.m; }
+  } catch { /* ok */ }
+  video.playbackRate = getSettings().speed;
+  video.addEventListener('volumechange', () => {
+    try {
+      localStorage.setItem('sosac-volume',
+        JSON.stringify({ v: video.volume, m: video.muted }));
+    } catch { /* ok */ }
+  });
+  video.addEventListener('progress', () => updateBuf(st));
+  video.addEventListener('timeupdate', () => updateBuf(st));
+  settingsBtn.onclick = () => {
+    settingsPanel.style.display =
+      settingsPanel.style.display === 'none' ? 'flex' : 'none';
+    updateBuf(st);
+  };
+  video.addEventListener('dblclick', () => toggleFullscreen(st));
+  ['fullscreenchange', 'webkitfullscreenchange'].forEach((ev) =>
+    document.addEventListener(ev, () => syncFsIcon(st)));
   eqBtn.onclick = () => {
     if (!st.eqOn) { enableEq(st); return; }
     eqPanel.style.display = eqPanel.style.display === 'none' ? 'flex' : 'none';
@@ -243,7 +441,36 @@ function ensurePlayer() {
   video.addEventListener('pause', emit);
   video.addEventListener('ended', emit);
   document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && st.overlay.style.display !== 'none') stopPlayback();
+    if (st.overlay.style.display === 'none' ||
+        (ev.target && ev.target.closest && ev.target.closest('input,select,textarea'))) return;
+    const s = getSettings();
+    const v = st.video;
+    switch (ev.key) {
+      case ' ':
+        if (v.paused) v.play().catch(() => {}); else v.pause();
+        ev.preventDefault();
+        break;
+      case 'ArrowLeft':
+        v.currentTime = Math.max(0, v.currentTime - s.seekStep);
+        break;
+      case 'ArrowRight':
+        if (v.duration) v.currentTime = Math.min(v.duration, v.currentTime + s.seekStep);
+        break;
+      case 'ArrowUp':
+        v.muted = false;
+        v.volume = Math.min(1, v.volume + 0.1);
+        ev.preventDefault();
+        break;
+      case 'ArrowDown':
+        v.volume = Math.max(0, v.volume - 0.1);
+        ev.preventDefault();
+        break;
+      case 'f': case 'F': toggleFullscreen(st); break;
+      case 'm': case 'M': v.muted = !v.muted; break;
+      case 'Escape':
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) stopPlayback();
+        break;
+    }
   });
   return st;
 }
@@ -262,7 +489,7 @@ function playStream(item, streams, index) {
   st.currentItem = item;
   pushHistory(item);
   trackPosition(st, item.id);
-  const resumePos = st.resumePos || 0;
+  const resumePos = getSettings().autoResume ? (st.resumePos || 0) : 0;
   st.resumePos = 0;
   if (resumePos > 0) {
     const v = st.video;
@@ -278,10 +505,21 @@ function playStream(item, streams, index) {
   } else {
     st.qualityEl.style.display = 'none';
   }
-  st.video.src = (st.eqOn && streams[index].proxyUrl) ? streams[index].proxyUrl
-    : streams[index].url;
-  st.overlay.style.display = 'flex';
-  st.video.play().catch(() => {});
+  const picked = streams[index];
+  if (st.eqCtx && !picked.proxyUrl) {
+    st.overlay.style.display = 'flex';
+    proxiedUrl(st, picked).catch(() => {}).finally(() => {
+      if (st.streams === streams && st.streamIndex === index) {
+        st.video.src = picked.proxyUrl || picked.url;
+        st.video.play().catch(() => {});
+      }
+    });
+  } else {
+    st.video.src = st.eqCtx ? picked.proxyUrl : picked.url;
+    st.overlay.style.display = 'flex';
+    st.video.play().catch(() => {});
+  }
+  st.video.playbackRate = getSettings().speed;
   emit();
 }
 
@@ -296,11 +534,10 @@ function switchStream(index) {
   const v = st.video;
   const s = st.streams[index];
   const applySrc = () => {
-    v.src = (st.eqOn && s.proxyUrl) ? s.proxyUrl : s.url;
+    v.src = (st.eqCtx && s.proxyUrl) ? s.proxyUrl : s.url;
   };
-  if (st.eqOn && !s.proxyUrl && st.ws) {
-    proxySrc(st, s.url).then((p) => { s.proxyUrl = p; applySrc(); })
-      .catch(() => { applySrc(); });
+  if (st.eqCtx && !s.proxyUrl) {
+    proxiedUrl(st, s).then(applySrc).catch(() => { applySrc(); });
   } else {
     applySrc();
   }
@@ -314,6 +551,9 @@ function switchStream(index) {
 
 function stopPlayback() {
   const st = store();
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  }
   if (st.video) {
     // poslední uložení pozice před zavřením
     if (st.currentItem && st.video.duration > 60) {
